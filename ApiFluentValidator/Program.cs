@@ -1,9 +1,12 @@
+using ApiFluentValidator;
 using ApiFluentValidator.Data;
+using ApiFluentValidator.Middleware;
 using ApiFluentValidator.Models;
 using ApiFluentValidator.Validators;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +18,38 @@ builder.Services.AddScoped<IValidator<Todo>, TodoValidator>();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "TodoServiceApi", Version = "v1" });
+
+    c.AddSecurityDefinition(Constants.ApiKeyHeaderName, new OpenApiSecurityScheme
+    {
+        Description = "Api key needed to access the endpoints. ApiKey: ApiKey",
+        In = ParameterLocation.Header,
+        Name = Constants.ApiKeyHeaderName,
+        Type = SecuritySchemeType.ApiKey
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Name = Constants.ApiKeyHeaderName,
+                Type = SecuritySchemeType.ApiKey,
+                In = ParameterLocation.Header,
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = Constants.ApiKeyHeaderName,
+                },
+                },
+                new string[] {}
+            }
+    });
+});
+
 
 var app = builder.Build();
 
@@ -88,7 +123,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+app.UseMiddleware<CustomApiKeyMiddleware>(app.Configuration.GetValue<string>("TodoApiKey"));
 
+app.UseHttpsRedirection();
 
 app.Run();
