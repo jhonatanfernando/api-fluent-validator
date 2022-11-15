@@ -9,4 +9,5 @@ public class TodoDb : DbContext
         : base(options) { }
 
     public DbSet<Todo> Todos => Set<Todo>();
+    public DbSet<User> Users => Set<User>();
 }

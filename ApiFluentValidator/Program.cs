@@ -2,9 +2,13 @@ using ApiFluentValidator;
 using ApiFluentValidator.Data;
 using ApiFluentValidator.Middleware;
 using ApiFluentValidator.Models;
+using ApiFluentValidator.Security;
+using ApiFluentValidator.Services;
 using ApiFluentValidator.Validators;
 using FluentValidation;
 using FluentValidation.Results;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 
@@ -12,6 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<TodoDb>(opt => opt.UseInMemoryDatabase("TodoList"));
 builder.Services.AddScoped<IValidator<Todo>, TodoValidator>();
+builder.Services.AddScoped<IUserService, UserService>();
 
 
 // Add services to the container.
@@ -19,36 +24,42 @@ builder.Services.AddScoped<IValidator<Todo>, TodoValidator>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "TodoServiceApi", Version = "v1" });
+//builder.Services.AddSwaggerGen(c =>
+//{
+//    c.SwaggerDoc("v1", new OpenApiInfo { Title = "TodoServiceApi", Version = "v1" });
 
-    c.AddSecurityDefinition(Constants.ApiKeyHeaderName, new OpenApiSecurityScheme
-    {
-        Description = "Api key needed to access the endpoints. ApiKey: ApiKey",
-        In = ParameterLocation.Header,
-        Name = Constants.ApiKeyHeaderName,
-        Type = SecuritySchemeType.ApiKey
-    });
+//    c.AddSecurityDefinition(Constants.ApiKeyHeaderName, new OpenApiSecurityScheme
+//    {
+//        Description = "Api key needed to access the endpoints. ApiKey: ApiKey",
+//        In = ParameterLocation.Header,
+//        Name = Constants.ApiKeyHeaderName,
+//        Type = SecuritySchemeType.ApiKey
+//    });
 
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Name = Constants.ApiKeyHeaderName,
-                Type = SecuritySchemeType.ApiKey,
-                In = ParameterLocation.Header,
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = Constants.ApiKeyHeaderName,
-                },
-                },
-                new string[] {}
-            }
-    });
-});
+//    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+//    {
+//        {
+//            new OpenApiSecurityScheme
+//            {
+//                Name = Constants.ApiKeyHeaderName,
+//                Type = SecuritySchemeType.ApiKey,
+//                In = ParameterLocation.Header,
+//                Reference = new OpenApiReference
+//                {
+//                    Type = ReferenceType.SecurityScheme,
+//                    Id = Constants.ApiKeyHeaderName,
+//                },
+//                },
+//                new string[] {}
+//            }
+//    });
+//});
+
+// configure basic authentication 
+builder.Services.AddAuthentication("BasicAuthentication")
+    .AddScheme<CustomBasicAuthenticationSchemeOptions, CustomBasicAuthenticationHandler>("BasicAuthentication",null);
+builder.Services.AddAuthorization();
+
 
 
 var app = builder.Build();
@@ -67,7 +78,22 @@ app.MapGet("/todoitems/{id}", async (int id, TodoDb db) =>
             ? Results.Ok(todo)
             : Results.NotFound());
 
-app.MapPost("/todoitems", async (IValidator<Todo> validator, Todo todo, TodoDb db) =>
+//app.MapPost("/todoitems", async (IValidator<Todo> validator, Todo todo, TodoDb db) =>
+//{
+//    ValidationResult validationResult = await validator.ValidateAsync(todo);
+
+//    if (!validationResult.IsValid)
+//    {
+//        return Results.ValidationProblem(validationResult.ToDictionary());
+//    }
+
+//    db.Todos.Add(todo);
+//    await db.SaveChangesAsync();
+
+//    return Results.Created($"/todoitems/{todo.Id}", todo);
+//});
+
+app.MapPost("/todoitems", [Authorize]  async (IValidator<Todo> validator, Todo todo, TodoDb db) =>
 {
     ValidationResult validationResult = await validator.ValidateAsync(todo);
 
@@ -115,6 +141,13 @@ app.MapDelete("/todoitems/{id}", async (int id, TodoDb db) =>
     return Results.NotFound();
 });
 
+app.MapPost("/user", async (IUserService userService, User user) =>
+{
+    await userService.Save(user);
+
+    return Results.Created($"/users/{user.Id}", user);
+});
+
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -123,7 +156,10 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseMiddleware<CustomApiKeyMiddleware>(app.Configuration.GetValue<string>("TodoApiKey"));
+// app.UseMiddleware<CustomApiKeyMiddleware>(app.Configuration.GetValue<string>("TodoApiKey"));
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.UseHttpsRedirection();
 
