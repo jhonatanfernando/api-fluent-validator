@@ -1,13 +1,12 @@
-using ApiFluentValidator;
 using ApiFluentValidator.Data;
-using ApiFluentValidator.Middleware;
 using ApiFluentValidator.Models;
 using ApiFluentValidator.Security;
 using ApiFluentValidator.Services;
 using ApiFluentValidator.Validators;
+using Asp.Versioning;
+using Asp.Versioning.Conventions;
 using FluentValidation;
 using FluentValidation.Results;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
@@ -18,11 +17,18 @@ builder.Services.AddDbContext<TodoDb>(opt => opt.UseInMemoryDatabase("TodoList")
 builder.Services.AddScoped<IValidator<Todo>, TodoValidator>();
 builder.Services.AddScoped<IUserService, UserService>();
 
+var version1 = new ApiVersion(1);
+var version2 = new ApiVersion(2);
 
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+builder.Services.AddApiVersioning(opt =>
+{
+    opt.ApiVersionReader = new HeaderApiVersionReader("Api-Version");
+});
 
 //builder.Services.AddSwaggerGen(c =>
 //{
@@ -55,6 +61,36 @@ builder.Services.AddSwaggerGen();
 //    });
 //});
 
+
+
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "BasicAuth", Version = "v1" });
+    c.AddSecurityDefinition("basic", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "basic",
+        In = ParameterLocation.Header,
+        Description = "Basic Authorization header using the Bearer scheme."
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+                {
+                    {
+                          new OpenApiSecurityScheme
+                            {
+                                Reference = new OpenApiReference
+                                {
+                                    Type = ReferenceType.SecurityScheme,
+                                    Id = "basic"
+                                }
+                            },
+                            new string[] {}
+                    }
+                });
+});
+
+
 // configure basic authentication 
 builder.Services.AddAuthentication("BasicAuthentication")
     .AddScheme<CustomBasicAuthenticationSchemeOptions, CustomBasicAuthenticationHandler>("BasicAuthentication",null);
@@ -64,10 +100,28 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+var versionSet = app.NewApiVersionSet()
+                     .HasApiVersion(version1)
+                     .HasApiVersion(version2)
+                     .Build();
+
+
+
 app.MapGet("/", () => "Hello World!");
 
-app.MapGet("/todoitems", async (TodoDb db) =>
-    await db.Todos.ToListAsync());
+//app.MapGet("v{version:apiVersion}/todoitems", [Authorize] async (TodoDb db) =>
+//{
+//    return await db.Todos.ToListAsync();
+//})
+//.WithApiVersionSet(versionSet)
+//.HasApiVersions(new[] { version1, version2 });
+
+app.MapGet("/todoitems", [Authorize] async (TodoDb db) =>
+{
+    return await db.Todos.ToListAsync();
+})
+.WithApiVersionSet(versionSet)
+.HasApiVersions(new[] { version1, version2 });
 
 app.MapGet("/todoitems/complete", async (TodoDb db) =>
     await db.Todos.Where(t => t.IsComplete).ToListAsync());
@@ -78,22 +132,8 @@ app.MapGet("/todoitems/{id}", async (int id, TodoDb db) =>
             ? Results.Ok(todo)
             : Results.NotFound());
 
-//app.MapPost("/todoitems", async (IValidator<Todo> validator, Todo todo, TodoDb db) =>
-//{
-//    ValidationResult validationResult = await validator.ValidateAsync(todo);
 
-//    if (!validationResult.IsValid)
-//    {
-//        return Results.ValidationProblem(validationResult.ToDictionary());
-//    }
-
-//    db.Todos.Add(todo);
-//    await db.SaveChangesAsync();
-
-//    return Results.Created($"/todoitems/{todo.Id}", todo);
-//});
-
-app.MapPost("/todoitems", [Authorize]  async (IValidator<Todo> validator, Todo todo, TodoDb db) =>
+app.MapPost("/todoitems", [Authorize] async (IValidator<Todo> validator, Todo todo, TodoDb db) =>
 {
     ValidationResult validationResult = await validator.ValidateAsync(todo);
 
@@ -106,7 +146,11 @@ app.MapPost("/todoitems", [Authorize]  async (IValidator<Todo> validator, Todo t
     await db.SaveChangesAsync();
 
     return Results.Created($"/todoitems/{todo.Id}", todo);
-});
+})
+.WithApiVersionSet(versionSet)
+.HasApiVersion(version1);
+
+
 
 app.MapPut("/todoitems/{id}", async (IValidator<Todo> validator, int id, Todo inputTodo, TodoDb db) =>
 {
