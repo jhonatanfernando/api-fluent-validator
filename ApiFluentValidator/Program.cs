@@ -28,6 +28,8 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddApiVersioning(opt =>
 {
     opt.ApiVersionReader = new HeaderApiVersionReader("Api-Version");
+    opt.DefaultApiVersion = version1;
+    opt.AssumeDefaultVersionWhenUnspecified = true;
 });
 
 //builder.Services.AddSwaggerGen(c =>
