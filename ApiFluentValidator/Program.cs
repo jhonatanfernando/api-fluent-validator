@@ -1,4 +1,5 @@
 using ApiFluentValidator.Data;
+using ApiFluentValidator.Helpers;
 using ApiFluentValidator.Models;
 using ApiFluentValidator.Security;
 using ApiFluentValidator.Services;
@@ -9,7 +10,10 @@ using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Console;
 using Microsoft.OpenApi.Models;
+
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,12 +29,23 @@ var version2 = new ApiVersion(2);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+
+var logger = LoggerFactory.Create(config =>
+{
+    config.AddConsole();
+}).CreateLogger("Program");
+
+//builder.Services.Configure<ConsoleLifetimeOptions>(opt => opt.SuppressStatusMessages = true);
+
 builder.Services.AddApiVersioning(opt =>
 {
-    opt.ApiVersionReader = new HeaderApiVersionReader("Api-Version");
+    opt.ApiVersionReader = new UrlSegmentApiVersionReader();
     opt.DefaultApiVersion = version1;
     opt.AssumeDefaultVersionWhenUnspecified = true;
 });
+
 
 //builder.Services.AddSwaggerGen(c =>
 //{
@@ -68,6 +83,7 @@ builder.Services.AddApiVersioning(opt =>
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "BasicAuth", Version = "v1" });
+    c.SwaggerDoc("v2", new OpenApiInfo { Title = "BasicAuth", Version = "v2" });
     c.AddSecurityDefinition("basic", new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -77,19 +93,21 @@ builder.Services.AddSwaggerGen(c =>
         Description = "Basic Authorization header using the Bearer scheme."
     });
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
-                {
-                    {
-                          new OpenApiSecurityScheme
-                            {
-                                Reference = new OpenApiReference
-                                {
-                                    Type = ReferenceType.SecurityScheme,
-                                    Id = "basic"
-                                }
-                            },
-                            new string[] {}
-                    }
-                });
+{
+    {
+        new OpenApiSecurityScheme
+        {
+            Reference = new OpenApiReference
+            {
+                Type = ReferenceType.SecurityScheme,
+                Id = "basic"
+            }
+        },
+        new string[] { }
+    }
+});
+    c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
+    c.OperationFilter<ApiVersionOperationFilter>();
 });
 
 
@@ -109,21 +127,28 @@ var versionSet = app.NewApiVersionSet()
 
 
 
-app.MapGet("/", () => "Hello World!");
-
-//app.MapGet("v{version:apiVersion}/todoitems", [Authorize] async (TodoDb db) =>
-//{
-//    return await db.Todos.ToListAsync();
-//})
-//.WithApiVersionSet(versionSet)
-//.HasApiVersions(new[] { version1, version2 });
-
-app.MapGet("/todoitems", [Authorize] async (TodoDb db) =>
+app.MapGet("/", () =>
 {
+    logger.LogInformation("Logging information.");
+    logger.LogCritical("Logging critical information.");
+    logger.LogDebug("Logging debug information.");
+    logger.LogError("Logging error information.");
+    logger.LogTrace("Logging trace");
+    logger.LogWarning("Logging warning.");
+
+    return "Hello World!";
+});
+
+app.MapGet("v{version:apiVersion}/todoitems", [Authorize] async (TodoDb db) =>
+{
+    logger.LogInformation("Getting todoitems");
+
     return await db.Todos.ToListAsync();
 })
 .WithApiVersionSet(versionSet)
 .HasApiVersions(new[] { version1, version2 });
+
+
 
 app.MapGet("/todoitems/complete", async (TodoDb db) =>
     await db.Todos.Where(t => t.IsComplete).ToListAsync());
@@ -135,7 +160,36 @@ app.MapGet("/todoitems/{id}", async (int id, TodoDb db) =>
             : Results.NotFound());
 
 
-app.MapPost("/todoitems", [Authorize] async (IValidator<Todo> validator, Todo todo, TodoDb db) =>
+app.MapPost("v{version:apiVersion}/todoitems", [Authorize] async (IValidator<Todo> validator, Todo todo, TodoDb db) =>
+{
+    try
+    {
+        logger.LogInformation("Saving todoitem");
+
+        ValidationResult validationResult = await validator.ValidateAsync(todo);
+
+        if (!validationResult.IsValid)
+        {
+            return Results.ValidationProblem(validationResult.ToDictionary());
+        }
+
+        db.Todos.Add(todo);
+        await db.SaveChangesAsync();
+
+        logger.LogInformation("TodoItem was saved");
+
+        return Results.Created($"/todoitems/{todo.Id}", todo);
+    }
+    catch(Exception ex)
+    {
+        logger.LogError(ex, "An unexpected exception occured");
+        return Results.Problem();
+    }
+})
+.WithApiVersionSet(versionSet)
+.MapToApiVersion(version1);
+
+app.MapPost("v{version:apiVersion}/todoitems", [Authorize] async (IValidator<Todo> validator, Todo todo, TodoDb db) =>
 {
     ValidationResult validationResult = await validator.ValidateAsync(todo);
 
@@ -144,13 +198,15 @@ app.MapPost("/todoitems", [Authorize] async (IValidator<Todo> validator, Todo to
         return Results.ValidationProblem(validationResult.ToDictionary());
     }
 
+    todo.CompletedTimestamp = DateTime.Now;
     db.Todos.Add(todo);
     await db.SaveChangesAsync();
 
     return Results.Created($"/todoitems/{todo.Id}", todo);
 })
+.WithName("newtodoitems")
 .WithApiVersionSet(versionSet)
-.HasApiVersion(version1);
+.MapToApiVersion(version2);
 
 
 
