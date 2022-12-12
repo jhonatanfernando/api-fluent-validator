@@ -12,8 +12,11 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Console;
 using Microsoft.OpenApi.Models;
-
-
+using Serilog;
+using Serilog.Formatting.Json;
+using Serilog.Sinks.Elasticsearch;
+using Serilog.Sinks.File;
+using ILogger = Serilog.ILogger;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,14 +33,48 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
 
-var logger = LoggerFactory.Create(config =>
+
+//builder.Host.UseSerilog((hostContext, services, configuration) => {
+//    configuration
+//    .WriteTo.Debug(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}");
+//});
+
+
+//builder.Logging.ClearProviders();
+//builder.Host.UseSerilog((hostContext, services, configuration) => {
+//    configuration
+//    .WriteTo.File(
+//      "diagnostics.txt",
+//       rollingInterval: RollingInterval.Day,
+//       fileSizeLimitBytes: 10 * 1024 * 1024,
+//       retainedFileCountLimit: 2,
+//       rollOnFileSizeLimit: true,
+//       shared: true,
+//       flushToDiskInterval: TimeSpan.FromSeconds(1));
+//});
+
+builder.Host.UseSerilog((hostContext, services, configuration) =>
 {
-    config.AddConsole();
-}).CreateLogger("Program");
+    configuration
+    .WriteTo.Elasticsearch(new ElasticsearchSinkOptions(new Uri("http://localhost:9200"))
+    {
+        FailureCallback = e => Console.WriteLine("Unable to submit event " + e.MessageTemplate),
+        EmitEventFailure = EmitEventFailureHandling.WriteToSelfLog | EmitEventFailureHandling.WriteToFailureSink | EmitEventFailureHandling.RaiseCallback,
+        QueueSizeLimit = 100000,
+        BatchPostingLimit = 50,
+        IndexFormat = "custom-index-{0:yyyy.MM}"
+    });
+});
 
-//builder.Services.Configure<ConsoleLifetimeOptions>(opt => opt.SuppressStatusMessages = true);
+Serilog.Debugging.SelfLog.Enable(msg => Console.WriteLine(msg));
+
+
+//Load settings from the appsettings.
+//builder.Host.UseSerilog((context, services, configuration) => configuration
+//    .ReadFrom.Configuration(context.Configuration)
+//    .WriteTo.Debug());
+
 
 builder.Services.AddApiVersioning(opt =>
 {
@@ -45,40 +82,6 @@ builder.Services.AddApiVersioning(opt =>
     opt.DefaultApiVersion = version1;
     opt.AssumeDefaultVersionWhenUnspecified = true;
 });
-
-
-//builder.Services.AddSwaggerGen(c =>
-//{
-//    c.SwaggerDoc("v1", new OpenApiInfo { Title = "TodoServiceApi", Version = "v1" });
-
-//    c.AddSecurityDefinition(Constants.ApiKeyHeaderName, new OpenApiSecurityScheme
-//    {
-//        Description = "Api key needed to access the endpoints. ApiKey: ApiKey",
-//        In = ParameterLocation.Header,
-//        Name = Constants.ApiKeyHeaderName,
-//        Type = SecuritySchemeType.ApiKey
-//    });
-
-//    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-//    {
-//        {
-//            new OpenApiSecurityScheme
-//            {
-//                Name = Constants.ApiKeyHeaderName,
-//                Type = SecuritySchemeType.ApiKey,
-//                In = ParameterLocation.Header,
-//                Reference = new OpenApiReference
-//                {
-//                    Type = ReferenceType.SecurityScheme,
-//                    Id = Constants.ApiKeyHeaderName,
-//                },
-//                },
-//                new string[] {}
-//            }
-//    });
-//});
-
-
 
 builder.Services.AddSwaggerGen(c =>
 {
@@ -117,7 +120,6 @@ builder.Services.AddAuthentication("BasicAuthentication")
 builder.Services.AddAuthorization();
 
 
-
 var app = builder.Build();
 
 var versionSet = app.NewApiVersionSet()
@@ -127,21 +129,20 @@ var versionSet = app.NewApiVersionSet()
 
 
 
-app.MapGet("/", () =>
+app.MapGet("/", (ILogger logger) =>
 {
-    logger.LogInformation("Logging information.");
-    logger.LogCritical("Logging critical information.");
-    logger.LogDebug("Logging debug information.");
-    logger.LogError("Logging error information.");
-    logger.LogTrace("Logging trace");
-    logger.LogWarning("Logging warning.");
+    logger.Information("Logging information.");
+    logger.Error("Logging critical information.");
+    logger.Debug("Logging debug information.");
+    logger.Error("Logging error information.");
+    logger.Warning("Logging warning.");
 
     return "Hello World!";
 });
 
 app.MapGet("v{version:apiVersion}/todoitems", [Authorize] async (TodoDb db) =>
 {
-    logger.LogInformation("Getting todoitems");
+    //logger.Information("Getting todoitems");
 
     return await db.Todos.ToListAsync();
 })
@@ -160,11 +161,11 @@ app.MapGet("/todoitems/{id}", async (int id, TodoDb db) =>
             : Results.NotFound());
 
 
-app.MapPost("v{version:apiVersion}/todoitems", [Authorize] async (IValidator<Todo> validator, Todo todo, TodoDb db) =>
+app.MapPost("v{version:apiVersion}/todoitems", [Authorize] async (ILogger logger, IValidator<Todo> validator, Todo todo, TodoDb db) =>
 {
     try
     {
-        logger.LogInformation("Saving todoitem");
+        logger.Information("Saving todoitem");
 
         ValidationResult validationResult = await validator.ValidateAsync(todo);
 
@@ -176,13 +177,13 @@ app.MapPost("v{version:apiVersion}/todoitems", [Authorize] async (IValidator<Tod
         db.Todos.Add(todo);
         await db.SaveChangesAsync();
 
-        logger.LogInformation("TodoItem was saved");
+        logger.Information("TodoItem was saved");
 
         return Results.Created($"/todoitems/{todo.Id}", todo);
     }
-    catch(Exception ex)
+    catch (Exception ex)
     {
-        logger.LogError(ex, "An unexpected exception occured");
+        logger.Error(ex, "An unexpected exception occured");
         return Results.Problem();
     }
 })
@@ -210,25 +211,33 @@ app.MapPost("v{version:apiVersion}/todoitems", [Authorize] async (IValidator<Tod
 
 
 
-app.MapPut("/todoitems/{id}", async (IValidator<Todo> validator, int id, Todo inputTodo, TodoDb db) =>
+app.MapPut("/todoitems/{id}", async (ILogger logger, IValidator < Todo> validator, int id, Todo inputTodo, TodoDb db) =>
 {
-    ValidationResult validationResult = await validator.ValidateAsync(inputTodo);
-
-    if (!validationResult.IsValid)
+    try
     {
-        return Results.ValidationProblem(validationResult.ToDictionary());
+        ValidationResult validationResult = await validator.ValidateAsync(inputTodo);
+
+        if (!validationResult.IsValid)
+        {
+            return Results.ValidationProblem(validationResult.ToDictionary());
+        }
+
+        var todo = await db.Todos.FindAsync(id);
+
+        if (todo is null) return Results.NotFound();
+
+        todo.Name = inputTodo.Name;
+        todo.IsComplete = inputTodo.IsComplete;
+
+        await db.SaveChangesAsync();
+
+        return Results.NoContent();
     }
-
-    var todo = await db.Todos.FindAsync(id);
-
-    if (todo is null) return Results.NotFound();
-
-    todo.Name = inputTodo.Name;
-    todo.IsComplete = inputTodo.IsComplete;
-
-    await db.SaveChangesAsync();
-
-    return Results.NoContent();
+    catch (Exception ex)
+    {
+        logger.Error(ex, "An unexpected exception occured");
+        return Results.Problem();
+    }
 });
 
 app.MapDelete("/todoitems/{id}", async (int id, TodoDb db) =>

@@ -1,0 +1,14 @@
+[12:08:21 Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager [Information] User profile is available. Using '"C:\Users\Jhonathan.oliveira\AppData\Local\ASP.NET\DataProtection-Keys"' as key repository and Windows DPAPI to encrypt keys at rest.
+[12:08:21 Microsoft.Hosting.Lifetime [Information] Now listening on: "https://localhost:7063"
+[12:08:21 Microsoft.Hosting.Lifetime [Information] Now listening on: "http://localhost:5063"
+[12:08:21 Microsoft.Hosting.Lifetime [Information] Application started. Press Ctrl+C to shut down.
+[12:08:21 Microsoft.Hosting.Lifetime [Information] Hosting environment: "Development"
+[12:08:21 Microsoft.Hosting.Lifetime [Information] Content root path: "C:\Users\Jhonathan.oliveira\source\repos\ApiFluentValidator\ApiFluentValidator\"
+[12:08:22 Microsoft.AspNetCore.Hosting.Diagnostics [Information] Request starting HTTP/2 GET https://localhost:7063/swagger/index.html - -
+[12:08:23 Microsoft.AspNetCore.Hosting.Diagnostics [Information] Request starting HTTP/2 GET https://localhost:7063/_vs/browserLink - -
+[12:08:23 Microsoft.AspNetCore.Hosting.Diagnostics [Information] Request starting HTTP/2 GET https://localhost:7063/_framework/aspnetcore-browser-refresh.js - -
+[12:08:23 Microsoft.AspNetCore.Hosting.Diagnostics [Information] Request finished HTTP/2 GET https://localhost:7063/_framework/aspnetcore-browser-refresh.js - - - 200 12006 application/javascript;+charset=utf-8 20.2750ms
+[12:08:23 Microsoft.AspNetCore.Hosting.Diagnostics [Information] Request finished HTTP/2 GET https://localhost:7063/swagger/index.html - - - 200 - text/html;charset=utf-8 617.8098ms
+[12:08:23 Microsoft.AspNetCore.Hosting.Diagnostics [Information] Request finished HTTP/2 GET https://localhost:7063/_vs/browserLink - - - 200 - text/javascript;+charset=UTF-8 58.4250ms
+[12:08:23 Microsoft.AspNetCore.Hosting.Diagnostics [Information] Request starting HTTP/2 GET https://localhost:7063/swagger/v1/swagger.json - -
+[12:08:23 Microsoft.AspNetCore.Hosting.Diagnostics [Information] Request finished HTTP/2 GET https://localhost:7063/swagger/v1/swagger.json - - - 200 - application/json;charset=utf-8 268.7813ms
