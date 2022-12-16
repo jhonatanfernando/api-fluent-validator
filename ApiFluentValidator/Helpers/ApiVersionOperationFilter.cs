@@ -18,13 +18,13 @@ public class ApiVersionOperationFilter : IOperationFilter
         {
             operation.Parameters.Add(new OpenApiParameter
             {
-                Name = "API-Version",
-                In = ParameterLocation.Header,
-                Description = "API Version header value",
+                Name = "version",
+                In = ParameterLocation.Path,
+                Description = "v{version}",
                 Schema = new OpenApiSchema
                 {
                     Type = "String",
-                    Default = new OpenApiString("1.0")
+                    Default = new OpenApiString("1")
                 }
             });
         }
