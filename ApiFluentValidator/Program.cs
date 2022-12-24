@@ -1,3 +1,5 @@
+using ApiFluentValidator.BackgroundServices;
+using ApiFluentValidator.BackgroundServices.Quartz;
 using ApiFluentValidator.Data;
 using ApiFluentValidator.Helpers;
 using ApiFluentValidator.Models;
@@ -12,8 +14,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Console;
 using Microsoft.OpenApi.Models;
-
-
+using Quartz;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -45,40 +46,6 @@ builder.Services.AddApiVersioning(opt =>
     opt.DefaultApiVersion = version1;
     opt.AssumeDefaultVersionWhenUnspecified = true;
 });
-
-
-//builder.Services.AddSwaggerGen(c =>
-//{
-//    c.SwaggerDoc("v1", new OpenApiInfo { Title = "TodoServiceApi", Version = "v1" });
-
-//    c.AddSecurityDefinition(Constants.ApiKeyHeaderName, new OpenApiSecurityScheme
-//    {
-//        Description = "Api key needed to access the endpoints. ApiKey: ApiKey",
-//        In = ParameterLocation.Header,
-//        Name = Constants.ApiKeyHeaderName,
-//        Type = SecuritySchemeType.ApiKey
-//    });
-
-//    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-//    {
-//        {
-//            new OpenApiSecurityScheme
-//            {
-//                Name = Constants.ApiKeyHeaderName,
-//                Type = SecuritySchemeType.ApiKey,
-//                In = ParameterLocation.Header,
-//                Reference = new OpenApiReference
-//                {
-//                    Type = ReferenceType.SecurityScheme,
-//                    Id = Constants.ApiKeyHeaderName,
-//                },
-//                },
-//                new string[] {}
-//            }
-//    });
-//});
-
-
 
 builder.Services.AddSwaggerGen(c =>
 {
@@ -116,6 +83,30 @@ builder.Services.AddAuthentication("BasicAuthentication")
     .AddScheme<CustomBasicAuthenticationSchemeOptions, CustomBasicAuthenticationHandler>("BasicAuthentication",null);
 builder.Services.AddAuthorization();
 
+
+
+builder.Services.AddScoped<ITodoService, TodoService>();
+//builder.Services.AddSingleton<IBackgroundQueue<Todo>, BackgroundQueue<Todo>>();
+//builder.Services.AddHostedService<TodoBackgroundQueueService>();
+
+builder.Services.AddQuartz(q =>
+{
+    // Create a "key" for the job
+    var jobKey = new JobKey("CompleteTodoItemJob");
+
+    q.UseMicrosoftDependencyInjectionJobFactory();
+
+    // Register the job with the DI container
+    q.AddJob<CompleteTodoItemJob>(opts => opts.WithIdentity(jobKey));
+
+    // Create a trigger for the job
+    q.AddTrigger(opts => opts
+        .ForJob(jobKey) // link to the CompleteTodoItemJob
+        .WithIdentity("CompleteTodoItemJob-trigger") // give the trigger a unique name
+        .WithCronSchedule("0/10 * * * * ?")); // run every 10 seconds
+
+});
+builder.Services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
 
 
 var app = builder.Build();
@@ -158,6 +149,22 @@ app.MapGet("/todoitems/{id}", async (int id, TodoDb db) =>
         is Todo todo
             ? Results.Ok(todo)
             : Results.NotFound());
+
+app.MapPut("v{version:apiVersion}/complete", [Authorize] (IBackgroundQueue<Todo> queue, int id, TodoDb db) =>
+{
+    var todo = db.Todos.SingleOrDefault(c=> c.Id == id);
+
+    if(todo is null)
+    {
+        return Results.NotFound();
+    }
+
+    queue.Enqueue(todo);
+
+    return Results.Accepted();
+})
+.WithApiVersionSet(versionSet)
+.MapToApiVersion(version1);
 
 
 app.MapPost("v{version:apiVersion}/todoitems", [Authorize] async (IValidator<Todo> validator, Todo todo, TodoDb db) =>
