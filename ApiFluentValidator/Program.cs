@@ -1,3 +1,4 @@
+using ApiFluentValidator;
 using ApiFluentValidator.Data;
 using ApiFluentValidator.Helpers;
 using ApiFluentValidator.Models;
@@ -10,6 +11,8 @@ using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Console;
 using Microsoft.OpenApi.Models;
 
@@ -45,40 +48,6 @@ builder.Services.AddApiVersioning(opt =>
     opt.DefaultApiVersion = version1;
     opt.AssumeDefaultVersionWhenUnspecified = true;
 });
-
-
-//builder.Services.AddSwaggerGen(c =>
-//{
-//    c.SwaggerDoc("v1", new OpenApiInfo { Title = "TodoServiceApi", Version = "v1" });
-
-//    c.AddSecurityDefinition(Constants.ApiKeyHeaderName, new OpenApiSecurityScheme
-//    {
-//        Description = "Api key needed to access the endpoints. ApiKey: ApiKey",
-//        In = ParameterLocation.Header,
-//        Name = Constants.ApiKeyHeaderName,
-//        Type = SecuritySchemeType.ApiKey
-//    });
-
-//    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-//    {
-//        {
-//            new OpenApiSecurityScheme
-//            {
-//                Name = Constants.ApiKeyHeaderName,
-//                Type = SecuritySchemeType.ApiKey,
-//                In = ParameterLocation.Header,
-//                Reference = new OpenApiReference
-//                {
-//                    Type = ReferenceType.SecurityScheme,
-//                    Id = Constants.ApiKeyHeaderName,
-//                },
-//                },
-//                new string[] {}
-//            }
-//    });
-//});
-
-
 
 builder.Services.AddSwaggerGen(c =>
 {
@@ -117,7 +86,6 @@ builder.Services.AddAuthentication("BasicAuthentication")
 builder.Services.AddAuthorization();
 
 
-
 var app = builder.Build();
 
 var versionSet = app.NewApiVersionSet()
@@ -147,8 +115,6 @@ app.MapGet("v{version:apiVersion}/todoitems", [Authorize] async (TodoDb db) =>
 })
 .WithApiVersionSet(versionSet)
 .HasApiVersions(new[] { version1, version2 });
-
-
 
 app.MapGet("/todoitems/complete", async (TodoDb db) =>
     await db.Todos.Where(t => t.IsComplete).ToListAsync());
@@ -257,8 +223,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
-// app.UseMiddleware<CustomApiKeyMiddleware>(app.Configuration.GetValue<string>("TodoApiKey"));
 
 app.UseAuthentication();
 app.UseAuthorization();
