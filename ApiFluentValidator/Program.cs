@@ -1,4 +1,3 @@
-using ApiFluentValidator;
 using ApiFluentValidator.Data;
 using ApiFluentValidator.Helpers;
 using ApiFluentValidator.Models;
@@ -11,18 +10,27 @@ using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging.Console;
 using Microsoft.OpenApi.Models;
 
 
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddMemoryCache();
+//builder.Services.AddDistributedMemoryCache();
+
+builder.Services.AddDistributedSqlServerCache(options =>
+{
+    options.ConnectionString = builder.Configuration.GetConnectionString("DistCacheConnection");
+    options.SchemaName = "dbo";
+    options.TableName = "TestCache";
+});
+
 builder.Services.AddDbContext<TodoDb>(opt => opt.UseInMemoryDatabase("TodoList"));
 builder.Services.AddScoped<IValidator<Todo>, TodoValidator>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<ITodoService, TodoService>();
+
 
 var version1 = new ApiVersion(1);
 var version2 = new ApiVersion(2);
@@ -88,11 +96,11 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+
 var versionSet = app.NewApiVersionSet()
                      .HasApiVersion(version1)
                      .HasApiVersion(version2)
                      .Build();
-
 
 
 app.MapGet("/", () =>
@@ -107,14 +115,14 @@ app.MapGet("/", () =>
     return "Hello World!";
 });
 
-app.MapGet("v{version:apiVersion}/todoitems", [Authorize] async (TodoDb db) =>
+app.MapGet("v{version:apiVersion}/todoitems", [Authorize] async (ITodoService todoService) =>
 {
     logger.LogInformation("Getting todoitems");
 
-    return await db.Todos.ToListAsync();
+    return await todoService.GetAllWithDistributedCache();
 })
 .WithApiVersionSet(versionSet)
-.HasApiVersions(new[] { version1, version2 });
+.MapToApiVersion(version1);
 
 app.MapGet("/todoitems/complete", async (TodoDb db) =>
     await db.Todos.Where(t => t.IsComplete).ToListAsync());
